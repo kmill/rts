@@ -1,0 +1,27 @@
+<html>
+<head>
+  <script src="/socket.io/socket.io.js"></script>
+  <script type="text/javascript">
+    var socket = io.connect('http://rts.kylem.net');
+    socket.on('connect', function () {
+        console.log("connected");
+        send('hi');
+    });
+
+    socket.on('message', function (message) {
+        console.log("got message: " + message);
+    });
+
+    socket.on('disconnect', function () {
+        console.log("disconnected");
+    });
+
+    function send(message) {
+        socket.emit('my message', message);
+    }
+
+  </script>
+</head>
+<body>
+</body>
+</html>
