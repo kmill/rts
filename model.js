@@ -3,6 +3,10 @@
 var _ = require("underscore");
 var types = require("./types");
 
+/*************
+ * Unit defs *
+ *************/
+
 var unit_defs = {};
 var unit_def_from_id = {};
 
@@ -33,6 +37,30 @@ addUnitDef(new UnitDef({
   name : "basic_mobile"
 }));
 
+var UnitDefType = {
+  length : 2,
+  write : function (buf, offset, value) {
+    buf.writeUInt16LE(value.id, offset);
+    return 2;
+  },
+  read : function (buf, offset, value) {
+    return unit_def_from_id[buf.readUInt16LE(offset)];
+  },
+  coerce : function (val) {
+    if (typeof val === "string") {
+      return  unit_defs[val];
+    } else if (typeof val === "number") {
+      return unit_def_from_id[val];
+    } else {
+      return val;
+    }
+  }
+};
+
+/*********
+ * Units *
+ *********/
+
 function Unit(props) {
   this.id = null;
   this.type = null;
@@ -50,7 +78,7 @@ function Unit(props) {
 }
 
 Unit.props = [
-  { name : "type", "type" : types.UInt16, "subprop" : "id" },
+  { name : "type", "type" : UnitDefType },
   { name : "x", "type" : types.UFixed2 },
   { name : "y", "type" : types.UFixed2 },
   { name : "heading", "type" : types.Float32 },
@@ -92,14 +120,9 @@ Unit.readUpdateBuffer = function (buf, offset) {
 };
 
 Unit.prototype.normalize = function () {
-  if (typeof this.type === "string") {
-    this.type = unit_defs[this.type];
-  } else if (typeof this.type === "number") {
-    this.type = unit_def_from_id[this.type];
-  }
   var that = this;
   _.each(Unit.props, function (prop) {
-    if (that[prop.name] !== null && prop.name !== "type") {
+    if (that[prop.name] !== null) {
       that[prop.name] = prop.type.coerce(that[prop.name]);
     }
   });
@@ -111,10 +134,6 @@ Unit.prototype.diff = function (source) {
   _.each(Unit.props, function (prop) {
     var v1 = dest[prop.name];
     var v2 = source[prop.name];
-    if (prop.subprop) {
-      if (v1) { v1 = v1[prop.subprop]; }
-      v2 = v2[prop.subprop];
-    }
     if (v1 !== v2) {
       diffs.push({
         prop : prop,
@@ -130,11 +149,8 @@ Unit.prototype.updateFromDiff = function (diff) {
   _.each(diff, function (d) {
     dest[d.prop.name] = d.updated;
   });
-  dest.normalize();
+  //dest.normalize();
 };
-
-
-
 Unit.prototype.step = function () {
   this.x += this.dx;
   this.y += this.dy;
@@ -146,50 +162,10 @@ Unit.prototype.step = function () {
   this.dy *= 1 - this.type.friction;
   this.normalize();
 };
-/*
-Unit.prototype.serialize = function (buf, offset) {
-  var len = 0;
-  function uint32(v) {
-    buf.writeUInt32LE(v, offset + len);
-    len += 4;
-  }
-  function float32(v) {
-    buf.writeFloatLE(v, offset + len);
-    len += 4;
-  }
-  uint32(this.id);
-  uint32(this.type.id);
-  float32(this.x);
-  float32(this.y);
-  float32(this.heading);
-  float32(this.dx);
-  float32(this.dy);
-  float32(this.dheading);
-  return len;
-};
-Unit.prototype.deserialize = function (buf, offset) {
-  var len = 0;
-  function uint32() {
-    var v = buf.readUInt32LE(offset + len);
-    len += 4;
-    return v;
-  }
-  function float32() {
-    var v = buf.readFloatLE(offset + len);
-    len += 4;
-    return v;
-  }
-  this.id = uint32();
-  this.type = unit_def_from_id[uint32()];
-  this.x = float32();
-  this.y = float32();
-  this.heading = float32();
-  this.dx = float32();
-  this.dy = float32();
-  this.dheading = float32();
-  return len;
-};
-*/
+
+/********
+ * Game *
+ ********/
 
 function Game() {
   this.tick = null;
@@ -328,7 +304,16 @@ Game.readUpdateBuffer = function (buf, offset) {
   }
   return { diff : { tick : tick, diffs : diffs }, len : len };
 };
+Game.prototype.step = function () {
+  _.each(this.units, function (unit) {
+    unit.step();
+  });
+  this.tick++;
+};
 
+/*********************
+ * ServerClientModel *
+ *********************/
 
 // Maintains what the server thinks the client knows.
 function ServerClientModel(sourceGame) {
@@ -352,8 +337,13 @@ ServerClientModel.prototype.generateUpdateBuffer = function (maxBytes) {
   };
 };
 
+/***************
+ * ClientModel *
+ ***************/
+
 function ClientModel() {
   this.game = new Game();
+  this.queuedActions = [];
 }
 ClientModel.prototype.readUpdateBuffer = function (buf) {
   this.game.step(); // update because diff is w.r.t. updated state
@@ -363,39 +353,18 @@ ClientModel.prototype.readUpdateBuffer = function (buf) {
     console.log(ret.diff); */
   this.game.updateFromDiff(ret.diff);
 };
+ClientModel.prototype.queueAction = function (action) {
+  this.queuedActions.push(action);
+};
 
+/***********
+ * Actions *
+ ***********/
 
-Game.prototype.step = function () {
-  _.each(this.units, function (unit) {
-    unit.step();
-  });
-  this.tick++;
-};
-/*
-Game.prototype.serialize = function (buf, offset) {
-  var len = 0;
-  buf.writeUInt32LE(this.tick, offset + len);
-  len += 4;
-  buf.writeUInt16LE(this.units.length, offset + len);
-  len += 2;
-  _.each(this.units, function (unit) {
-    len += unit.serialize(buf, offset + len);
-  });
-  return len;
-};
-Game.prototype.deserialize = function (buf, offset) {
-  var len = 0;
-  this.tick = buf.readUInt32LE(offset+len);
-  len += 4;
-  this.units.length = buf.readUInt16LE(offset+len);
-  len += 2;
-  for (var i = 0; i < this.units.length; i++) {
-    this.units[i] = new Unit();
-    len += this.units[i].deserialize(buf, offset+len);
-  }
-  return len;
-};
-*/
+function UnitMotorAction(uid, thrust, rotationSpeed) {
+  this.thrust = thrust;
+  this.rotationSpeed = rotationSpeed;
+}
 
 exports.Game = Game;
 exports.Unit = Unit;
