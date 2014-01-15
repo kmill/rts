@@ -3,13 +3,18 @@
 
 var _ = require('underscore');
 var model = require('./model');
+var constants = require("./constants");
 
-function cubic(t, t1, y1, t2, y2, t3, y3) {
+
+function quadratic(t, t1, y1, t2, y2, t3, y3) {
   var v = (t - t2) * (t - t3) * y1 / ((t1 - t2) * (t1 - t3));
   v += (t - t1) * (t - t3) * y2 / ((t2 - t1) * (t2 - t3));
   v += (t - t1) * (t - t2) * y3 / ((t3 - t1) * (t3 - t2));
   return v;
 }
+quadratic = function linear (t, t1, y1, t2, y2, t3, y3) {
+  return (t - t3) * y2/(t2-t3) + (t - t2) * y3/(t3-t2);
+};
 
 function CUnit(unit, cgame) {
   this.unit = unit;
@@ -35,22 +40,28 @@ CUnit.prototype.updatePosHistory = function () {
 };
 CUnit.prototype.update = function (timestamp) {
   this.updatePosHistory();
-  var dt = (timestamp - this.cgame.tickTimestamp) * 30/1000;
-  if (false && this.posHistory.length == 3) {
+  var dt = (timestamp - this.cgame.tickTimestamp) / constants.TICK_INTERVAL;
+  if (true && this.posHistory.length == 3) {
     var p = this.posHistory;
-    this.x = cubic(timestamp,
+    this.x = quadratic(timestamp,
                    p[0].timestamp, p[0].x,
                    p[1].timestamp, p[1].x,
                    p[2].timestamp, p[2].x);
-    this.y = cubic(timestamp,
+    this.y = quadratic(timestamp,
                    p[0].timestamp, p[0].y,
                    p[1].timestamp, p[1].y,
                    p[2].timestamp, p[2].y);
-  } else {
+    this.heading = this.unit.heading + dt*this.unit.rotationSpeed;
+  } else if (false) {
     this.x = this.unit.x + dt*this.unit.dx;
     this.y = this.unit.y + dt*this.unit.dy;
+    this.heading = this.unit.heading + dt*this.unit.rotationSpeed;
+  } else {
+    this.x = this.unit.x;
+    this.y = this.unit.y;
+    this.heading = this.unit.heading;
   }
-  this.heading = this.unit.heading + dt*this.unit.rotationSpeed;
+
 };
 
 function CGame(game) {

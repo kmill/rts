@@ -10,6 +10,7 @@ function InputWatcher(mouseSelector) {
   o.buttons = {};
   o.x = null;
   o.y = null;
+  o.path = null;
 
   o.mouseHandlers = [];
   $(function () {
@@ -24,6 +25,9 @@ function InputWatcher(mouseSelector) {
     $(mouseSelector).mousemove(function (e) {
       o.x = e.pageX;
       o.y = e.pageY;
+      if (o.path) {
+        o.path.push({x : o.x, y : o.y});
+      }
     });
     $(mouseSelector).mousedown(function (e) {
       e.preventDefault();
@@ -33,14 +37,17 @@ function InputWatcher(mouseSelector) {
         x : o.x,
         y : o.y
       };
+      o.path = [{x : o.x, y : o.y}];
     });
     $(mouseSelector).mouseup(function (e) {
       o.x = e.pageX;
       o.y = e.pageY;
       var released = o.buttons[e.which];
+      var path = o.path;
       delete o.buttons[e.which];
+      o.path = null;
       _.each(o.mouseHandlers, function (l) {
-        l(o, e.which, released);
+        l(o, e.which, released, path);
       });
     });
     $(mouseSelector).on('mousewheel', function (e) {

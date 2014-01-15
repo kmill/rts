@@ -12,9 +12,9 @@ function UnitDef(props) {
   this.width = 32;
   this.length = 32;
   this.mass = 10;
-  this.maxThrust = 0.4;
-  this.maxRotationSpeed = 1;
-  this.friction = 0.05;
+  this.maxThrust = 10;
+  this.maxRotationSpeed = 2;
+  this.friction = 0.3;
   this.mobile = true;
   _.extend(this, props);
 }
@@ -50,14 +50,14 @@ function Unit(props) {
 }
 
 Unit.props = [
-  { name : "type", "type" : "uint16", "subprop" : "id" },
-  { name : "x", "type" : "float" },
-  { name : "y", "type" : "float" },
-  { name : "heading", "type" : "float" },
-  { name : "dx", "type" : "float" },
-  { name : "dy", "type" : "float" },
-  { name : "thrust", "type" : "float" },
-  { name : "rotationSpeed", "type" : "float" }
+  { name : "type", "type" : types.UInt16, "subprop" : "id" },
+  { name : "x", "type" : types.UFixed2 },
+  { name : "y", "type" : types.UFixed2 },
+  { name : "heading", "type" : types.Float32 },
+  { name : "dx", "type" : types.Fixed2 },
+  { name : "dy", "type" : types.Fixed2 },
+  { name : "thrust", "type" : types.Fixed2 },
+  { name : "rotationSpeed", "type" : types.Float32 }
 ];
 _.each(Unit.props, function (prop, id) { prop.id = id+1; });
 
@@ -65,9 +65,9 @@ Unit.generateUpdateBuffer = function (buf, offset, maxBytes, diff) {
   maxBytes--; // for zero-termination
   var len = 0;
   _.each(diff, function (d) {
-    if (maxBytes - (offset + len) > 1 + types.typeLength(d.prop.type)) {
+    if (maxBytes - (offset + len) > 1 + d.prop.type.length) {
       buf.writeUInt8(d.prop.id, offset+len); len += 1;
-      len += types.write(buf, offset+len, d.prop.type, d.updated);
+      len += d.prop.type.write(buf, offset+len, d.updated);
     }
   });
   buf.writeUInt8(0, offset+len); len += 1;
@@ -81,11 +81,11 @@ Unit.readUpdateBuffer = function (buf, offset) {
     var id = buf.readUInt8(offset + len); len += 1;
     if (id === 0) break;
     var prop = Unit.props[id-1];
-    var v = types.read(buf, offset+len, prop.type);
-    len += v.len;
+    var v = prop.type.read(buf, offset+len);
+    len += prop.type.length;
     diff.push({
       prop : prop,
-      updated : v.val
+      updated : v
     });
   }
   return { diff : diff, len : len };
@@ -100,7 +100,7 @@ Unit.prototype.normalize = function () {
   var that = this;
   _.each(Unit.props, function (prop) {
     if (that[prop.name] !== null && prop.name !== "type") {
-      that[prop.name] = types.coerce(that[prop.name], prop.type);
+      that[prop.name] = prop.type.coerce(that[prop.name]);
     }
   });
 };
@@ -138,11 +138,12 @@ Unit.prototype.updateFromDiff = function (diff) {
 Unit.prototype.step = function () {
   this.x += this.dx;
   this.y += this.dy;
+  this.dx += this.thrust * Math.cos(-this.heading);
+  this.dy += this.thrust * Math.sin(-this.heading);
   this.heading += this.rotationSpeed;
   this.heading = (2*Math.PI + this.heading) % (2*Math.PI);
   this.dx *= 1 - this.type.friction;
   this.dy *= 1 - this.type.friction;
-  this.rotationSpeed *= 0.9;
   this.normalize();
 };
 /*
@@ -337,6 +338,7 @@ function ServerClientModel(sourceGame) {
   this.latency = null;
 }
 ServerClientModel.prototype.generateUpdateBuffer = function (maxBytes) {
+  this.game.step(); // if we let the client update, perhaps fewer things will be different
   var diff = this.game.diff(this.sourceGame);
   var buf = new Buffer(maxBytes);
   var len = 0;
@@ -354,6 +356,7 @@ function ClientModel() {
   this.game = new Game();
 }
 ClientModel.prototype.readUpdateBuffer = function (buf) {
+  this.game.step(); // update because diff is w.r.t. updated state
   this.latency = buf.readUInt8(0);
   var ret = Game.readUpdateBuffer(buf, 1);
   /* if (ret.diff.diffs.length > 0 )

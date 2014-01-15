@@ -119,6 +119,8 @@ inputWatcher.listenMouse(function (input, which, released) {
         selected_ids = sels;
       }
     }
+  } else if (which === 3) {
+    console.log("move");
   } else {
     console.log("released " + which);
   }
@@ -205,6 +207,7 @@ function animateFrame(canvas, timestamp) {
   _.each(cgame.units, function (unit) {
     canvas.c.save();
     canvas.c.translate(unit.x, unit.y);
+    canvas.c.fillText(unit.x.toFixed(2) + "," + unit.y.toFixed(2), 10, 15);
     canvas.c.rotate(-unit.heading);
 
     canvas.c.beginPath();
@@ -248,6 +251,20 @@ function animateFrame(canvas, timestamp) {
                   Math.min(starty, endy) + 0.5,
                   Math.abs(startx - endx),
                   Math.abs(starty - endy));
+    canvas.c.stroke();
+  }
+  if (inputWatcher.path) {
+    canvas.c.beginPath();
+    canvas.c.strokeStyle = "#00a";
+    var started = false;
+    _.each(inputWatcher.path, function (p) {
+      if (started) {
+        canvas.c.lineTo(p.x, p.y);
+      } else {
+        canvas.c.moveTo(p.x, p.y);
+        started = true;
+      }
+    });
     canvas.c.stroke();
   }
 

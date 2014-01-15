@@ -7,6 +7,8 @@ var app = require('http').createServer(handler),
 var buffer = require('buffer');
 var networking = require('./networking');
 
+//io.set('transports', ['htmlfile', 'xhr-polling', 'jsonp-polling']);
+
 io.set('log level', 1);
 
 app.listen(8333);
@@ -60,7 +62,7 @@ function Client(socket, game) {
 
   this.buf = new Buffer(2048);
 
-  this.bytesPerTick = 1024;
+  this.bytesPerTick = 30 * 1024 * constants.TICK_INTERVAL / 1000;
 
   var that = this;
   socket.on('disconnect', function () {
@@ -104,18 +106,18 @@ Client.prototype.process = function (message) {
       return;
     }
     if (dir & 1) {
-      unit.rotationSpeed += 0.01;
+      unit.rotationSpeed = 0.1;
+    } else if (dir & 4) {
+      unit.rotationSpeed = -0.1;
+    } else {
+      unit.rotationSpeed = 0;
     }
     if (dir & 2) {
-      unit.dx += Math.cos(-unit.heading)*0.3;
-      unit.dy += Math.sin(-unit.heading)*0.3;
-    }
-    if (dir & 4) {
-      unit.rotationSpeed -= 0.01;
-    }
-    if (dir & 8) {
-      unit.dx -= Math.cos(-unit.heading)*0.3;
-      unit.dy -= Math.sin(-unit.heading)*0.3;
+      unit.thrust = 5;
+    } else if (dir & 8) {
+      unit.thrust = -5;
+    } else {
+      unit.thrust = 0;
     }
   });
 };
@@ -128,8 +130,7 @@ io.sockets.on('connection', function (socket) {
 //g.updateFromDiff(g.diff(game));
 //console.log(g);
 
-var stepDelay = 30;
-var stepNum = 0;
+var constants = require("./constants");
 
 //var buf = new Buffer(1024);
 
@@ -140,7 +141,7 @@ function runStep() {
     client.sendUpdate();
   });
 
-  timers.setTimeout(runStep, stepDelay);
+  timers.setTimeout(runStep, constants.TICK_INTERVAL);
 }
 
 runStep();
