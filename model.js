@@ -2,6 +2,7 @@
 
 var _ = require("underscore");
 var types = require("./types");
+var vect = require("./vect");
 
 function normalize(o) {
   _.each(o.constructor.props, function (prop) {
@@ -29,7 +30,7 @@ function UnitDef(props) {
     maxThrust : 5,
     minThrust : -5,
     maxRotationSpeed : 0.4,
-    friction : 0.1,
+    friction : 0.3,
     mobile : true,
     draw : function (canvas) {
       canvas.c.save();
