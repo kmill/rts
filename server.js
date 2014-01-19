@@ -22,8 +22,10 @@ var model = require("./model.js");
 var game = new model.Game();
 for (var i = 1; i <= 200; i++) {
   var u = new model.Unit({
-    id : i,
+    id : game.genId(),
+    player : i % 2 + 1,
     type : "basic_mobile",
+    health : 20,
     x : Math.random() * 4096,
     y : Math.random() * 4096,
     heading : Math.random() * 2 * Math.PI
@@ -108,6 +110,7 @@ var constants = require("./constants");
 
 function runStep() {
   game.step();
+  console.log(_.size(game.units) + " " + _.size(game.projectiles));
 
   _.each(known_clients, function (client) {
     client.sendUpdate();

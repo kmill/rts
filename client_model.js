@@ -64,39 +64,67 @@ CUnit.prototype.update = function (timestamp) {
 
 };
 
+function CProjectile(projectile, cgame) {
+  this.projectile = projectile;
+  this.cgame = cgame;
+  this.id = projectile.id;
+  this.x = projectile.x;
+  this.y = projectile.y;
+  this.posHistory = [];
+}
+CProjectile.prototype.update = function (timestamp) {
+  var dt = (timestamp - this.cgame.tickTimestamp) / constants.TICK_INTERVAL;
+  this.x = this.projectile.x + dt*this.projectile.dx;
+  this.y = this.projectile.y + dt*this.projectile.dy;
+}
+
+
 function CGame(cmodel) {
   this.cmodel = cmodel;
   this.pgame = this.cmodel.predictGame();
   this.game = this.cmodel.game;
   this.tick = this.cmodel.game.tick;
   this.units = {};
+  this.projectiles = {};
   this.update(null);
 }
 CGame.prototype.update = function (timestamp) {
-  var that = this;
   if (this.tick != this.game.tick) {
     this.tickTimestamp = timestamp;
     this.tick = this.game.tick;
     this.pgame = this.cmodel.predictGame();
   }
-  var wanted_ids = {};
-  _.each(that.game.units, function (unit) {
-    wanted_ids[unit.id] = true;
-    if (!_.has(that.units, unit.id)) {
-      that.units[unit.id] = new CUnit(unit, that);
+  _.each(this.game.units, function (unit) {
+    if (!_.has(this.units, unit.id)) {
+      this.units[unit.id] = new CUnit(unit, this);
     } else {
-      that.units[unit.id].unit = unit;
+      this.units[unit.id].unit = unit;
     }
-  });
-  var to_delete = [];
-  _.each(that.units, function (cunit) {
-    if (_.has(wanted_ids, cunit.id)) {
+  }, this);
+  _.each(_.keys(this.units), function (uid) {
+    var cunit = this.units[uid];
+    if (_.has(this.game.units, cunit.id)) {
       cunit.update(timestamp);
     } else {
-      to_delete.push(cunit.id);
+      delete this.units[uid];
     }
-  });
-  _.each(to_delete, function (id) { delete that.units[id]; });
+  }, this);
+
+  _.each(this.game.projectiles, function (projectile) {
+    if (!_.has(this.projectiles, projectile.id)) {
+      this.projectiles[projectile.id] = new CProjectile(projectile, this);
+    } else {
+      this.projectiles[projectile.id].projectile = projectile;
+    }
+  }, this);
+  _.each(_.keys(this.projectiles), function (pid) {
+    var cproj = this.projectiles[pid];
+    if (_.has(this.game.projectiles, pid)) {
+      cproj.update(timestamp);
+    } else {
+      delete this.projectiles[pid];
+    }
+  }, this);
 };
 
 exports.CGame = CGame;

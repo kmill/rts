@@ -96,9 +96,32 @@ function Fixed2(fracBinDigits) {
   };
 }
 
+function FixedChar(length) {
+  return {
+    length : length,
+    write : function (buf, offset, value) {
+      for (var i = 0; i < length; i++) {
+        buf[offset+i] = value.charCodeAt(0) || 0;
+      }
+      return length;
+    },
+    read : function (buf, offset, value) {
+      var val = "";
+      for (var i = 0; i < length && buf[offset + i] != 0; i++) {
+        val += String.fromCharCode(buf[offset + i]);
+      }
+      return val;
+    },
+    coerce : function (value) {
+      return value.slice(0, length);
+    }
+  };
+}
+
 exports.UInt8 = UInt8;
 exports.UInt16 = UInt16;
 exports.UInt32 = UInt32;
 exports.Float32 = Float32;
 exports.UFixed2 = UFixed2;
 exports.Fixed2 = Fixed2;
+exports.FixedChar = FixedChar;

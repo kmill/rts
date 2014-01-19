@@ -156,6 +156,7 @@ inputWatcher.listenMouse(function (input, which, released, path) {
     } else {
       var vpath = _.map(path, function (pt) { return viewport.fromViewport(pt); });
       var ids = _.shuffle(_.keys(selected_ids));
+      ids = _.filter(ids, function (id) { return _.has(game.units, id); });
       var pathLength = 0;
       var lengths = [];
       for (var i = 0; i < vpath.length-1; i++) {
@@ -187,7 +188,7 @@ inputWatcher.listenMouse(function (input, which, released, path) {
         var lastj = j, lastalpha = alpha;
         if (i > 0) {
           updateToNextPoint();
-          if (j === lastj && lastalpha === alpha) debugger;
+          //if (j === lastj && lastalpha === alpha) debugger;
         }
         dest_points.push(vect.interp2(vpath[j], vpath[j+1], alpha));
       }
@@ -272,12 +273,24 @@ function Viewport(canvas) {
   this.zoomBase = 1.5;
 }
 Viewport.prototype.update = function (input) {
+  var zoomFactor = Math.pow(this.zoomBase, this.zoom);
   if (input.buttons[2]) {
-    var zoomFactor = Math.pow(this.zoomBase, this.zoom);
     var dx = (input.x - input.buttons[2].x) / zoomFactor;
     var dy = (input.buttons[2].y - input.y) / zoomFactor;
     this.center.x += dx * 0.05;
     this.center.y += dy * 0.05;
+  }
+  if (input.keys[37]) {
+    this.center.x -= 10/zoomFactor;
+  }
+  if (input.keys[38]) {
+    this.center.y += 10/zoomFactor;
+  }
+  if (input.keys[39]) {
+    this.center.x += 10/zoomFactor;
+  }
+  if (input.keys[40]) {
+    this.center.y -= 10/zoomFactor;
   }
 };
 Viewport.prototype.inputListen = function (input) {
@@ -333,10 +346,15 @@ function animateFrame(canvas, timestamp) {
   }
   viewport.update(inputWatcher);
 
-  
-
   if (inputWatcher.keys[36]) { // HOME
     try_reconnecting = true;
+  }
+
+  if (inputWatcher.keys[46]) { // delete
+    _.each(_.keys(selected_ids), function (uid) {
+      cmodel.queueAction(new model.UnitFireAction({uid : uid}));
+      //cmodel.queueAction(new model.UnitDestructAction({uid : uid}));
+    });
   }
 
   if (lastTimestamp !== null) {
@@ -353,6 +371,7 @@ function animateFrame(canvas, timestamp) {
 
   canvas.c.save();
 
+  canvas.c.globalAlpha = 1.0;
   canvas.c.beginPath();
   canvas.c.strokeWidth = 1;
   canvas.c.strokeStyle = "#000";
@@ -397,7 +416,7 @@ function animateFrame(canvas, timestamp) {
                     unit.type.bounds[1].y - unit.type.bounds[0].y + 4);
       canvas.c.stroke();
     }
-    unit.type.draw(canvas);
+    unit.type.draw(unit, canvas, timestamp);
     canvas.c.restore();
 
     canvas.c.transform(1, 0, 0, -1, 0, 0);
@@ -407,6 +426,26 @@ function animateFrame(canvas, timestamp) {
     }
     canvas.c.stroke();
 
+    var healthWidth = 14*unit.health/unit.type.hp;
+    canvas.c.beginPath();
+    canvas.c.fillStyle = "#f00";
+    canvas.c.fillRect(-7+healthWidth, 10, 14-healthWidth, 3);
+    canvas.c.stroke();
+    canvas.c.beginPath();
+    canvas.c.fillStyle = "#0f0";
+    canvas.c.fillRect(-7, 10, healthWidth, 3);
+    canvas.c.stroke();
+
+    canvas.c.restore();
+  });
+
+  _.each(cgame.projectiles, function (cproj) {
+    var proj = cproj.projectile;
+    if (proj.type === null) return;
+    canvas.c.save();
+    viewport.addTransform(canvas);
+    canvas.c.translate(cproj.x, cproj.y);
+    proj.type.draw(proj, canvas, timestamp);
     canvas.c.restore();
   });
 
@@ -422,6 +461,9 @@ function animateFrame(canvas, timestamp) {
     canvas.c.save();
     var visited = {};
     _.each(myOrders.orders, function (orders, uid) {
+      if (!_.has(cgame.units, uid)) {
+        return;
+      }
       var selected = _.has(selected_ids, uid);
       canvas.c.beginPath();
       canvas.c.strokeStyle = "#3f3";

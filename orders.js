@@ -77,11 +77,55 @@ Planner.prototype.update = function () {
     while (keepGoing) {
       var order = self.orders.peekOrder(uid);
       if (order === null) {
-        if (punit.rotationSpeed !== 0) {
-          self.cmodel.queueAction(new model.UnitRotationAction({
-            uid : uid,
-            rotationSpeed : 0
-          }));
+        
+        if (pgame.quadtree) {
+          var nearby = pgame.quadtree.lookup(punit, 50);
+        }
+
+        var bestTarget = _.max(nearby, function (found) {
+          if (found === punit || found.player == punit.player) {
+            return -Infinity;
+          } else {
+            return vect.angleCut(punit.heading - vect.atan(punit, found), -Math.PI);
+          }
+        });
+        var attacking = bestTarget !== -Infinity && bestTarget !== punit;
+
+        if (attacking) {
+          var desiredHeading = vect.atan(punit, bestTarget);
+          var headingDelta = vect.angleCut(punit.heading - desiredHeading, -Math.PI);
+          
+          // correct heading
+          if (Math.abs(headingDelta) > Math.PI/1000) {
+            var rotSpeed = -headingDelta/3;
+            rotSpeed = vect.clamp(rotSpeed,
+                                  -punit.type.maxRotationSpeed, punit.type.maxRotationSpeed);
+            if (rotSpeed !== punit.rotationSpeed) {
+              self.cmodel.queueAction(new model.UnitRotationAction({
+                uid : uid,
+                rotationSpeed : rotSpeed
+              }));
+            }
+          } else {
+            if (punit.rotationSpeed != 0) {
+              self.cmodel.queueAction(new model.UnitRotationAction({
+                  uid : uid,
+                rotationSpeed : 0
+              }));
+            }
+          }
+          if (Math.abs(headingDelta) < Math.PI/10) {
+            self.cmodel.queueAction(new model.UnitFireAction({
+              uid : uid
+            }));
+          }
+        } else {
+          if (punit.rotationSpeed !== 0) {
+            self.cmodel.queueAction(new model.UnitRotationAction({
+              uid : uid,
+              rotationSpeed : 0
+            }));
+          }
         }
         if (punit.thrust !== 0) {
           self.cmodel.queueAction(new model.UnitThrustAction({
@@ -98,9 +142,25 @@ Planner.prototype.update = function () {
           } else {
             keepGoing = false;
 
-            var desiredHeading = vect.atan(punit, order.pt);
+            var nearby = pgame.quadtree.lookup(punit, 50);
+            var bestTarget = _.max(nearby, function (found) {
+              if (found === punit || found.player == punit.player) {
+                return -Infinity;
+              } else {
+                return vect.angleCut(punit.heading - vect.atan(punit, found), -Math.PI);
+              }
+            });
+            var toPointAt = order.pt;
+            var attacking = false;
+            if (bestTarget !== -Infinity && bestTarget !== punit) {
+              toPointAt = bestTarget;
+              attacking = true;
+            }
+
+            var desiredHeading = vect.atan(punit, toPointAt);
             var headingDelta = vect.angleCut(punit.heading - desiredHeading, -Math.PI);
-            //console.log([desiredHeading, headingDelta]);
+
+            // correct heading
             if (Math.abs(headingDelta) > Math.PI/1000) {
               var rotSpeed = -headingDelta/3;
               rotSpeed = vect.clamp(rotSpeed,
@@ -120,7 +180,7 @@ Planner.prototype.update = function () {
               }
             }
             
-            if (Math.abs(headingDelta) < Math.PI/10) {
+            if (!attacking && Math.abs(headingDelta) < Math.PI/10) {
               var dist = vect.dist(punit, order.pt);
               var thrust = dist / 10;
               thrust = vect.clamp(thrust,
@@ -137,6 +197,11 @@ Planner.prototype.update = function () {
                 self.cmodel.queueAction(new model.UnitThrustAction({
                   uid : uid,
                   thrust : 0
+                }));
+              }
+              if (attacking && Math.abs(headingDelta) < Math.PI/10) {
+                self.cmodel.queueAction(new model.UnitFireAction({
+                  uid : uid
                 }));
               }
             }
