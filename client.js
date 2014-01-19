@@ -250,14 +250,6 @@ function determine_selection_rect() {
   }
 }
 
-function between(x, a, b) {
-  return a <= x && x <= b;
-}
-function within(pt, rect) {
-  return (between(pt.x, rect.x, rect.x + rect.width)
-          && between(pt.y, rect.y, rect.y + rect.height));
-}
-
 function determine_prelim_selection(/*opt*/bounds) {
   if (bounds === undefined) {
     bounds = determine_selection_rect();
@@ -265,7 +257,7 @@ function determine_prelim_selection(/*opt*/bounds) {
   var selected = {};
   if (bounds !== null) {
     _.each(cgame.units, function (unit) {
-      if (within(unit, bounds)) {
+      if (vect.within(unit, bounds)) {
         selected[unit.id] = true;
       }
     });
@@ -390,6 +382,7 @@ function animateFrame(canvas, timestamp) {
 
   _.each(cgame.units, function (cunit) {
     var unit = cunit.unit;
+    if (unit.type === null) return;
     canvas.c.save();
     viewport.addTransform(canvas);
     canvas.c.translate(cunit.x, cunit.y);

@@ -198,15 +198,27 @@ Unit.prototype.updateFromDiff = function (diff) {
   });
   //dest.normalize();
 };
-Unit.prototype.step = function () {
-  this.x += this.dx;
-  this.y += this.dy;
-  this.dx += this.thrust * Math.cos(this.heading);
-  this.dy += this.thrust * Math.sin(this.heading);
-  this.heading += this.rotationSpeed;
-  this.heading = (2*Math.PI + this.heading) % (2*Math.PI);
-  this.dx *= 1 - this.type.friction;
-  this.dy *= 1 - this.type.friction;
+Unit.prototype.step = function (game) {
+  if (this.type !== null) {
+    this.x += this.dx;
+    this.y += this.dy;
+    this.dx += this.thrust * Math.cos(this.heading);
+    this.dy += this.thrust * Math.sin(this.heading);
+    this.heading += this.rotationSpeed;
+    this.heading = (2*Math.PI + this.heading) % (2*Math.PI);
+    this.dx *= 1 - this.type.friction;
+    this.dy *= 1 - this.type.friction;
+    
+    var collisions = game.quadtree.lookup(this, 10);
+    _.each(collisions, function (cunit) {
+    var dist = vect.dist(this, cunit);
+      if (cunit !== this && dist < 10) {
+        var dv = vect.unit(this, cunit);
+        this.dx = this.dx/2 - dv.x / dist * 10;
+        this.dy = this.dy/2 - dv.y / dist * 10;
+      }
+    }, this);
+  }
   this.normalize();
 };
 
@@ -362,9 +374,11 @@ Game.readUpdateBuffer = function (buf, offset) {
   return { diff : { tick : tick, diffs : diffs }, len : len };
 };
 Game.prototype.step = function () {
+  this.quadtree = new vect.Quadtree(null, 0, 0, 4096);
+  this.quadtree.addAll(this.units);
   _.each(this.units, function (unit) {
-    unit.step();
-  });
+    unit.step(this);
+  }, this);
   this.tick++;
 };
 
