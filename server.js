@@ -19,28 +19,29 @@ function handler(req, res) {
 }
 
 var model = require("./model.js");
-
 var game = new model.Game();
-var u = new model.Unit({
-  id : 1,
-  type : "basic_mobile",
-  x : 200,
-  y : 200,
-  heading : 0
-});
-game.addUnit(u);
+for (var i = 1; i <= 200; i++) {
+  var u = new model.Unit({
+    id : i,
+    type : "basic_mobile",
+    x : Math.random() * 4096,
+    y : Math.random() * 4096,
+    heading : Math.random() * 2 * Math.PI
+  });
+  game.addUnit(u);
+}
 
-u = new model.Unit({
-  id : 2,
-  type : "basic_mobile",
-  x : 500,
-  y : 300,
-  heading : 2*Math.PI/3
-});
-game.addUnit(u);
-game.tick = 1;
+// u = new model.Unit({
+//   id : 2,
+//   type : "basic_mobile",
+//   x : 500,
+//   y : 300,
+//   heading : 2*Math.PI/3
+// });
+// game.addUnit(u);
+// game.tick = 1;
 
-console.log((new model.Game()).diff(game).diffs[0].diff);
+//console.log((new model.Game()).diff(game).diffs[0].diff);
 
 var users = {};
 
@@ -60,9 +61,9 @@ function Client(socket, game) {
 
   this.lastTickResponse = -1;
 
-  this.buf = new Buffer(2048);
+  this.buf = new Buffer(4096);
 
-  this.bytesPerTick = 30 * 1024 * constants.TICK_INTERVAL / 1000;
+  this.bytesPerTick = Math.min(this.buf.length, ~~(30 * 1024 * constants.TICK_INTERVAL / 1000));
 
   var that = this;
   socket.on('disconnect', function () {
@@ -86,40 +87,11 @@ Client.prototype.process = function (message) {
   var offset = 0;
   this.lastTickResponse = this.buf.readUInt32LE(offset); offset += 4;
   
-  /* nonsense */
+  var ret = model.deserializeActions(this.buf, offset);
+  offset += ret.length;
+  var actions = ret.actions;
 
-  var dir = this.buf.readUInt8(offset);
-  offset += 1;
-  var ids_length = this.buf.readUInt16LE(offset);
-  offset += 2;
-  var ids = [];
-  for (var i = 0; i < ids_length; i++) {
-    ids.push(this.buf.readUInt16LE(offset));
-    offset += 2;
-  }
-
-  _.each(ids, function (id) {
-    var unit = _.filter(game.units, function (u) {
-      return u.id === id;
-    })[0];
-    if (typeof unit === "undefined") {
-      return;
-    }
-    if (dir & 1) {
-      unit.rotationSpeed = 0.1;
-    } else if (dir & 4) {
-      unit.rotationSpeed = -0.1;
-    } else {
-      unit.rotationSpeed = 0;
-    }
-    if (dir & 2) {
-      unit.thrust = 5;
-    } else if (dir & 8) {
-      unit.thrust = -5;
-    } else {
-      unit.thrust = 0;
-    }
-  });
+  _.each(actions, function (action) { action.perform(game); });
 };
 
 io.sockets.on('connection', function (socket) {

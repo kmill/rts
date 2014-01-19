@@ -1,4 +1,6 @@
 var _ = require("underscore");
+var jqmousewheel = require("./jquery.mousewheel");
+jqmousewheel($);
 
 var SHIFT = 16;
 var CTRL = 17;
@@ -13,6 +15,7 @@ function InputWatcher(mouseSelector) {
   o.path = null;
 
   o.mouseHandlers = [];
+  o.mouseWheelHandlers = [];
   $(function () {
     $(document).keydown(function (e) {
       e.preventDefault();
@@ -33,10 +36,14 @@ function InputWatcher(mouseSelector) {
       e.preventDefault();
       o.x = e.pageX;
       o.y = e.pageY;
-      o.buttons[e.which] = {
-        x : o.x,
-        y : o.y
-      };
+      if (o.buttons[e.which] === void 0) {
+        o.buttons[e.which] = {
+          x : o.x,
+          y : o.y
+        };
+      } else {
+        // do nothing; this is due to going off the window
+      }
       o.path = [{x : o.x, y : o.y}];
     });
     $(mouseSelector).mouseup(function (e) {
@@ -50,15 +57,19 @@ function InputWatcher(mouseSelector) {
         l(o, e.which, released, path);
       });
     });
-    $(mouseSelector).on('mousewheel', function (e) {
+    $(mouseSelector).mousewheel(function (e) {
       e.preventDefault();
-      debugger;
-      console.log(e);
+      _.each(o.mouseWheelHandlers, function (l) {
+        l(o, e.deltaX, e.deltaY);
+      });
     });
   });
 }
 InputWatcher.prototype.listenMouse = function (l) {
   this.mouseHandlers.push(l);
+};
+InputWatcher.prototype.listenMouseWheel = function (l) {
+  this.mouseWheelHandlers.push(l);
 };
 InputWatcher.prototype.reset = function () {
   this.keys = {};

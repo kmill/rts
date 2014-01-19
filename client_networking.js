@@ -3,7 +3,7 @@ var networking = require("./networking");
 var buffer = require('buffer');
 var _ = require('underscore');
 
-var buf = new Buffer(1024);
+var buf = new Buffer(4096);
 
 var listeners = [];
 function register(l) {
@@ -19,7 +19,14 @@ socket.on('connect', function () {
 socket.on('message', function (message) {
   wstats.record(networking.getUTF8Size(message));
   networking.stringToBuffer(message, buf);
-  _.each(listeners, function (l) { l(socket, buf); });
+  _.each(listeners, function (l) {
+    function send(buf, start, end) {
+      var message = networking.bufferToString(buf, start, end);
+      wstats.recordSend(networking.getUTF8Size(message));
+      socket.send(message);
+    }
+    l(send, buf);
+  });
 });
 
 socket.on('disconnect', function () {
@@ -27,6 +34,12 @@ socket.on('disconnect', function () {
 });
 
 function isConnected() { return connected; }
+
+function reconnect() {
+  if (!connected) {
+    socket.socket.reconnect();
+  }
+}
 
 var wstats = new WebsocketStats();
 wstats.setMode(0);
@@ -38,3 +51,4 @@ window.wstats = wstats;
 
 exports.register = register;
 exports.isConnected = isConnected;
+exports.reconnect = reconnect;

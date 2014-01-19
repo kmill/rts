@@ -57,33 +57,44 @@ var Float32 = {
   }
 };
 
-var UFixed2 = {
-  length : 2,
-  write : function (buf, offset, value) {
-    buf.writeUInt16LE(~~(value * 16), offset);
-    return 2;
-  },
-  read : function (buf, offset, value) {
-    return buf.readUInt16LE(offset)/16;
-  },
-  coerce : function (value) {
-    return (~~(value * 16)) / 16;
-  }
-};
+function UFixed2(fracBinDigits) {
+  return {
+    length : 2,
+    fracBinDigits : fracBinDigits,
+    write : function (buf, offset, value) {
+      buf.writeUInt16LE(~~(value * (1 << fracBinDigits)), offset);
+      return 2;
+    },
+    read : function (buf, offset, value) {
+      return buf.readUInt16LE(offset)/(1 << fracBinDigits);
+    },
+    coerce : function (value) {
+      return ((value * (1 << fracBinDigits)) & 0xFFFF) / (1 << fracBinDigits);
+    }
+  };
+}
 
-var Fixed2 = {
-  length : 2,
-  write : function (buf, offset, value) {
-    buf.writeInt16LE(~~(value * 16), offset);
-    return 2;
-  },
-  read : function (buf, offset, value) {
-    return buf.readInt16LE(offset)/16;
-  },
-  coerce : function (value) {
-    return (~~(value * 16)) / 16;
-  }
-};
+function Fixed2(fracBinDigits) {
+  return {
+    length : 2,
+    fracBinDigits : fracBinDigits,
+    write : function (buf, offset, value) {
+      buf.writeInt16LE(~~(value * (1 << fracBinDigits)), offset);
+      return 2;
+    },
+    read : function (buf, offset, value) {
+      return buf.readInt16LE(offset)/(1 << fracBinDigits);
+    },
+    coerce : function (value) {
+      var v2 = ~~(value * (1 << fracBinDigits));
+
+      if (v2 >= 0) v2 = v2 & 0xFFFF;
+      else v2 = (v2 & 0xFFFF) | 0xFFFF0000;
+
+      return v2 / (1 << fracBinDigits);
+    }
+  };
+}
 
 exports.UInt8 = UInt8;
 exports.UInt16 = UInt16;

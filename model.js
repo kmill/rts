@@ -3,6 +3,14 @@
 var _ = require("underscore");
 var types = require("./types");
 
+function normalize(o) {
+  _.each(o.constructor.props, function (prop) {
+    if (o[prop.name] !== null) {
+      o[prop.name] = prop.type.coerce(o[prop.name]);
+    }
+  });
+}
+
 /*************
  * Unit defs *
  *************/
@@ -11,21 +19,34 @@ var unit_defs = {};
 var unit_def_from_id = {};
 
 function UnitDef(props) {
-  this.id = null;
-  this.name = null;
-  this.width = 32;
-  this.length = 32;
-  this.mass = 10;
-  this.maxThrust = 10;
-  this.maxRotationSpeed = 2;
-  this.friction = 0.3;
-  this.mobile = true;
   _.extend(this, props);
+  _.defaults(this, {
+    id : null,
+    name : null,
+    bounds : [{x : -16, y : -16},
+              {x : 16, y : 16}],
+    mass : 10,
+    maxThrust : 5,
+    minThrust : -5,
+    maxRotationSpeed : 0.4,
+    friction : 0.1,
+    mobile : true,
+    draw : function (canvas) {
+      canvas.c.save();
+      canvas.c.fillStyle = "#000";
+      canvas.c.beginPath();
+      canvas.c.fillRect(this.bounds[0].x, this.bounds[0].y,
+                        this.bounds[1].x - this.bounds[0].x,
+                        this.bounds[1].y - this.bounds[0].y);
+      canvas.c.stroke();
+      canvas.c.restore();
+    }
+  });
 }
 
 function addUnitDef(unitdef) {
   if (unitdef.name === null) {
-    throw new Exception("UnitDef has no name");
+    throw new Error("UnitDef has no name");
   }
   var id = _.size(unit_defs) + 1;
   unitdef.id = id;
@@ -34,7 +55,21 @@ function addUnitDef(unitdef) {
 }
 
 addUnitDef(new UnitDef({
-  name : "basic_mobile"
+  name : "basic_mobile",
+  bounds : [{x : -5, y : -5},
+            {x : 10, y : 5}],
+  draw : function (canvas) {
+    canvas.c.save();
+    canvas.c.strokeStyle = "#000";
+    canvas.c.lineWidth = 1;
+    canvas.c.beginPath();
+    canvas.c.moveTo(10, 0);
+    canvas.c.lineTo(-5, -5);
+    canvas.c.lineTo(-5, 5);
+    canvas.c.lineTo(10, 0);
+    canvas.c.stroke();
+    canvas.c.restore();
+  }
 }));
 
 var UnitDefType = {
@@ -48,7 +83,11 @@ var UnitDefType = {
   },
   coerce : function (val) {
     if (typeof val === "string") {
-      return  unit_defs[val];
+      var def = unit_defs[val];
+      if (def === void 0) {
+        throw new Error("No such unit def: " + val);
+      }
+      return def;
     } else if (typeof val === "number") {
       return unit_def_from_id[val];
     } else {
@@ -62,40 +101,52 @@ var UnitDefType = {
  *********/
 
 function Unit(props) {
-  this.id = null;
-  this.type = null;
-  this.x = null;
-  this.y = null;
-  this.heading = null;
-  this.dx = 0;
-  this.dy = 0;
-  this.thrust = 0;
-  this.rotationSpeed = 0;
-
   _.extend(this, props);
+  _.defaults(this, {
+    id : null,
+    type : null,
+    x : null,
+    y : null,
+    heading : null,
+    dx : 0,
+    dy : 0,
+    thrust : 0,
+    rotationSpeed : 0
+  });
 
   this.normalize();
 }
 
 Unit.props = [
   { name : "type", "type" : UnitDefType },
-  { name : "x", "type" : types.UFixed2 },
-  { name : "y", "type" : types.UFixed2 },
-  { name : "heading", "type" : types.Float32 },
-  { name : "dx", "type" : types.Fixed2 },
-  { name : "dy", "type" : types.Fixed2 },
-  { name : "thrust", "type" : types.Fixed2 },
-  { name : "rotationSpeed", "type" : types.Float32 }
+  { name : "x", "type" : types.UFixed2(4) },
+  { name : "y", "type" : types.UFixed2(4) },
+  { name : "heading", "type" : types.Fixed2(10) },
+  { name : "dx", "type" : types.Fixed2(6) },
+  { name : "dy", "type" : types.Fixed2(6) },
+  { name : "thrust", "type" : types.Fixed2(6) },
+  { name : "rotationSpeed", "type" : types.Fixed2(10) }
 ];
 _.each(Unit.props, function (prop, id) { prop.id = id+1; });
+
+Unit.prototype.copy = function () {
+  var u = new Unit(_.pick(this, _.pluck(Unit.props, "name")));
+  u.id = this.id;
+  return u;
+};
 
 Unit.generateUpdateBuffer = function (buf, offset, maxBytes, diff) {
   maxBytes--; // for zero-termination
   var len = 0;
   _.each(diff, function (d) {
-    if (maxBytes - (offset + len) > 1 + d.prop.type.length) {
+    if (maxBytes - (offset + len) >= 1 + d.prop.type.length) {
       buf.writeUInt8(d.prop.id, offset+len); len += 1;
-      len += d.prop.type.write(buf, offset+len, d.updated);
+      try {
+        len += d.prop.type.write(buf, offset+len, d.updated);
+      } catch (x) {
+        console.log(d);
+        throw x;
+      }
     }
   });
   buf.writeUInt8(0, offset+len); len += 1;
@@ -120,12 +171,7 @@ Unit.readUpdateBuffer = function (buf, offset) {
 };
 
 Unit.prototype.normalize = function () {
-  var that = this;
-  _.each(Unit.props, function (prop) {
-    if (that[prop.name] !== null) {
-      that[prop.name] = prop.type.coerce(that[prop.name]);
-    }
-  });
+  normalize(this);
 };
 
 Unit.prototype.diff = function (source) {
@@ -154,8 +200,8 @@ Unit.prototype.updateFromDiff = function (diff) {
 Unit.prototype.step = function () {
   this.x += this.dx;
   this.y += this.dy;
-  this.dx += this.thrust * Math.cos(-this.heading);
-  this.dy += this.thrust * Math.sin(-this.heading);
+  this.dx += this.thrust * Math.cos(this.heading);
+  this.dy += this.thrust * Math.sin(this.heading);
   this.heading += this.rotationSpeed;
   this.heading = (2*Math.PI + this.heading) % (2*Math.PI);
   this.dx *= 1 - this.type.friction;
@@ -168,9 +214,19 @@ Unit.prototype.step = function () {
  ********/
 
 function Game() {
-  this.tick = null;
+  this.tick = 0;
   this.units = {};
 }
+
+Game.prototype.copy = function () {
+  var g = new Game();
+  g.tick = this.tick;
+  _.each(this.units, function (unit) {
+    g.addUnit(unit.copy());
+  });
+  return g;
+};
+
 Game.prototype.addUnit = function (unit) {
   if (unit.id) {
     this.units[unit.id] = unit;
@@ -249,18 +305,18 @@ Game.generateUpdateBuffer = function (buf, offset, maxBytes, diff) {
       throw new Exception("Not handled yet");
     } else if (d.dtype === "unit") {
       if (d.action === "remove") {
-        if (maxBytes - (offset+len) > 3) {
+        if (maxBytes - (offset+len) >= 3) {
           buf.writeUInt8(1, (offset+len)); len += 1;
           buf.writeUInt16LE(d.id, (offset+len)); len += 2;
         }
       } else if (d.action === "new") {
-        if (maxBytes - (offset+len) > 4) {
+        if (maxBytes - (offset+len) >= 4) {
           buf.writeUInt8(2, (offset+len)); len += 1;
           buf.writeUInt16LE(d.id, (offset+len)); len += 2;
           len += Unit.generateUpdateBuffer(buf, offset+len, maxBytes, d.diff);
         }
       } else if (d.action === "update") {
-        if (maxBytes - (offset+len) > 4) {
+        if (maxBytes - (offset+len) >= 4) {
           buf.writeUInt8(3, (offset+len)); len += 1;
           buf.writeUInt16LE(d.id, (offset+len)); len += 2;
           len += Unit.generateUpdateBuffer(buf, (offset+len), maxBytes, d.diff);
@@ -344,29 +400,156 @@ ServerClientModel.prototype.generateUpdateBuffer = function (maxBytes) {
 function ClientModel() {
   this.game = new Game();
   this.queuedActions = [];
+  this.unacknowledgedActions = {};
 }
 ClientModel.prototype.readUpdateBuffer = function (buf) {
-  this.game.step(); // update because diff is w.r.t. updated state
   this.latency = buf.readUInt8(0);
+  this.acknowledge(this.game.tick - this.latency);
+  this.game.step(); // update because diff is w.r.t. updated state
   var ret = Game.readUpdateBuffer(buf, 1);
-  /* if (ret.diff.diffs.length > 0 )
-    console.log(ret.diff); */
   this.game.updateFromDiff(ret.diff);
 };
 ClientModel.prototype.queueAction = function (action) {
+  action.tick = this.game.tick;
   this.queuedActions.push(action);
+};
+ClientModel.prototype.writeActions = function (buf, offset, maxLength) {
+  var len = 0;
+  _.each(this.queuedActions, function (action) {
+    len += types.UInt8.write(buf, offset+len, action.constructor.id);
+    _.each(action.constructor.props, function (prop) {
+      len += prop.type.write(buf, offset+len, action[prop.name]);
+    });
+  });
+  len += types.UInt8.write(buf, offset+len, 0);
+
+  this.unacknowledgedActions[this.game.tick] = this.queuedActions;
+  this.queuedActions = [];
+  return len;
+};
+ClientModel.readActions = function (buf, offset) {
+  return deserializeActions(buf, offset);
+};
+ClientModel.prototype.acknowledge = function (throughTick) {
+  var self = this;
+  var latency = 0;
+  _.each(_.keys(self.unacknowledgedActions), function (tick) {
+    tick = +tick;
+    if (tick <= throughTick) {
+      latency += 1;
+      delete self.unacknowledgedActions[tick];
+    }
+  });
+  return latency;
+};
+ClientModel.prototype.predictGame = function () {
+  var self = this;
+  var g = this.game.copy();
+  var unackTicks = _.map(_.keys(this.unacknowledgedActions), function (v) { return +v; });
+  unackTicks.sort(function (a, b) { return a - b; });
+  var steps = 0;
+  _.each(unackTicks, function (tick) {
+    _.each(self.unacknowledgedActions[tick], function (action) {
+      action.perform(g);
+    });
+    g.step();
+    steps += 1;
+  });
+  //console.log("predicting: " + steps);
+  return g;
 };
 
 /***********
- * Actions *
+ * actions *
  ***********/
 
-function UnitMotorAction(uid, thrust, rotationSpeed) {
-  this.thrust = thrust;
-  this.rotationSpeed = rotationSpeed;
+var action_types = {};
+function addActionType(at) {
+  var id = _.size(action_types) + 1;
+  at.id = id;
+  action_types[id] = at;
+}
+
+function UnitThrustAction(props) {
+  _.extend(this, props);
+  _.defaults(this, {
+    uid : null,
+    thrust : 0
+  });
+  normalize(this);
+}
+addActionType(UnitThrustAction);
+UnitThrustAction.props = [
+  { name : "uid", type : types.UInt16 },
+  { name : "thrust", type : types.Fixed2(6) }
+];
+
+UnitThrustAction.prototype.perform = function (game) {
+  var unit = game.units[this.uid];
+  if (unit) {
+    unit.thrust = this.thrust;
+    if (unit.thrust > unit.type.maxThrust) {
+      unit.thrust = unit.type.maxThrust;
+    }
+    if (unit.thrust < unit.type.minThrust) {
+      unit.thrust = unit.type.minThrust;
+    }
+  }
+};
+
+function UnitRotationAction(props) {
+  _.extend(this, props);
+  _.defaults(this, {
+    uid : null,
+    rotationSpeed : 0
+  });
+  normalize(this);
+}
+addActionType(UnitRotationAction);
+UnitRotationAction.props = [
+  { name : "uid", type : types.UInt16 },
+  { name : "rotationSpeed", type : types.Fixed2(10) }
+];
+
+UnitRotationAction.prototype.perform = function (game) {
+  var unit = game.units[this.uid];
+  if (unit) {
+    unit.rotationSpeed = this.rotationSpeed;
+    if (unit.rotationSpeed > unit.type.maxRotationSpeed) {
+      unit.rotationSpeed = unit.type.maxRotationSpeed;
+    }
+    if (unit.rotationSpeed < -unit.type.maxRotationSpeed) {
+      unit.rotationSpeed = -unit.type.maxRotationSpeed;
+    }
+  }
+};
+
+function serializeActions(buf, offset, actions) {
+}
+function deserializeActions(buf, offset) {
+  var len = 0;
+  var actions = [];
+  while (true) {
+    var aid = types.UInt8.read(buf, offset+len); len += 1;
+    if (aid === 0) break;
+    var action = new (action_types[aid])();
+    _.each(action.constructor.props, function (prop) {
+      action[prop.name] = prop.type.read(buf, offset+len);
+      len += prop.type.length;
+    });
+    actions.push(action);
+  }
+  return {
+    len : len,
+    actions : actions
+  };
 }
 
 exports.Game = Game;
 exports.Unit = Unit;
 exports.ServerClientModel = ServerClientModel;
 exports.ClientModel = ClientModel;
+
+exports.deserializeActions = deserializeActions;
+exports.UnitThrustAction = UnitThrustAction;
+exports.UnitRotationAction = UnitRotationAction;

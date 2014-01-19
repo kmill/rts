@@ -26,9 +26,9 @@ function CUnit(unit, cgame) {
   this.posHistory = [];
 }
 CUnit.prototype.updatePosHistory = function () {
-  if (this.posHistory.length < 3 || this.posHistory[2].tick < this.cgame.tick) {
+  if (this.posHistory.length < 3 || this.posHistory[2].tick < this.cgame.pgame.tick) {
     this.posHistory.push({
-      tick : this.cgame.tick,
+      tick : this.cgame.pgame.tick,
       timestamp : this.cgame.tickTimestamp,
       x : this.unit.x,
       y : this.unit.y
@@ -64,9 +64,11 @@ CUnit.prototype.update = function (timestamp) {
 
 };
 
-function CGame(game) {
-  this.game = game;
-  this.tick = game.tick;
+function CGame(cmodel) {
+  this.cmodel = cmodel;
+  this.pgame = this.cmodel.predictGame();
+  this.game = this.cmodel.game;
+  this.tick = this.cmodel.game.tick;
   this.units = {};
   this.update(null);
 }
@@ -75,18 +77,26 @@ CGame.prototype.update = function (timestamp) {
   if (this.tick != this.game.tick) {
     this.tickTimestamp = timestamp;
     this.tick = this.game.tick;
+    this.pgame = this.cmodel.predictGame();
   }
+  var wanted_ids = {};
   _.each(that.game.units, function (unit) {
+    wanted_ids[unit.id] = true;
     if (!_.has(that.units, unit.id)) {
       that.units[unit.id] = new CUnit(unit, that);
     } else {
       that.units[unit.id].unit = unit;
     }
   });
-  _.each(this.units, function (cunit) {
-    cunit.update(timestamp);
+  var to_delete = [];
+  _.each(that.units, function (cunit) {
+    if (_.has(wanted_ids, cunit.id)) {
+      cunit.update(timestamp);
+    } else {
+      to_delete.push(cunit.id);
+    }
   });
+  _.each(to_delete, function (id) { delete that.units[id]; });
 };
-
 
 exports.CGame = CGame;
