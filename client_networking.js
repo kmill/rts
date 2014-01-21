@@ -1,4 +1,4 @@
-var socket = io.connect('http://rts.kylem.net');
+var socket = io.connect('//rts.kylem.net');
 var networking = require("./networking");
 var buffer = require('buffer');
 var _ = require('underscore');

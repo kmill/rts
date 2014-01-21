@@ -72,7 +72,7 @@ Planner.prototype.update = function () {
 
   _.each(game.units, function (unit, uid) {
     var punit = pgame.units[uid];
-    if (punit === void 0) { return; }
+    if (punit === void 0 || punit.player !== self.cmodel.player) { return; }
     var keepGoing = true;
     while (keepGoing) {
       var order = self.orders.peekOrder(uid);

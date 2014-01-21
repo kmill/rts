@@ -31,6 +31,11 @@ _.mixin({
 
 var model = require('./model');
 var cmodel = new model.ClientModel();
+if (window.location.hash) {
+  cmodel.player = +window.location.hash.slice(1);
+} else {
+  cmodel.player = 1;
+}
 window.cmodel = cmodel;
 var game = cmodel.game;
 var client_model = require('./client_model');
@@ -114,7 +119,7 @@ inputWatcher.listenMouse(function (input, which, released, path) {
       var closest = null;
       var point = viewport.fromViewport(input);
       _.each(game.units, function (unit) {
-        if (vect.dist(unit, point) < 10) {
+        if (unit.player === cmodel.player && vect.dist(unit, point) < 10) {
           closest = unit;
         }
       });
@@ -164,7 +169,8 @@ inputWatcher.listenMouse(function (input, which, released, path) {
         pathLength += l;
         lengths.push(l);
       }
-      var delta = pathLength / ids.length;
+      vpath.push(vpath[vpath.length - 1]);
+      var delta = pathLength / (ids.length - 1) - ids.length * 0.01;
       var j = 0;
       var alpha = 0;
       function updateToNextPoint() {
@@ -258,7 +264,7 @@ function determine_prelim_selection(/*opt*/bounds) {
   var selected = {};
   if (bounds !== null) {
     _.each(cgame.units, function (unit) {
-      if (vect.within(unit, bounds)) {
+      if (unit.unit.player === cmodel.player && vect.within(unit, bounds)) {
         selected[unit.id] = true;
       }
     });
@@ -337,6 +343,31 @@ Viewport.prototype.removeScaling = function (canvas) {
 
 var viewport;
 
+var client_audio = require("./client_audio");
+$(function () {
+  client_audio.ensureSound("pew-left");
+  client_audio.ensureSound("pew-right");
+  client_audio.ensureSound("pew");
+});
+var seenProjectiles = {};
+function maybePew(proj, viewport) {
+  if (!_.has(seenProjectiles, proj.id)) {
+    seenProjectiles[proj.id] = true;
+    var pt = viewport.toViewport(proj);
+    pt.x = 2*pt.x/this.canvas.width-1;
+    pt.y = 2*pt.y/this.canvas.height-1;
+    var zdist = Math.pow(viewport.zoomBase, -viewport.zoom);
+    var dist = Math.sqrt(pt.x*pt.x + pt.y*pt.y + zdist*zdist);
+    var left = 1/(1 + Math.pow(pt.x +0.5, 2));
+    var right = 1/(1 + Math.pow(pt.x - 0.5, 2));
+    var sum = left + right;
+    //console.log([pt.x, pt.y, zdist, 0.5/dist, left/sum, right/sum]);
+    //client_audio.playSound("pew", left/sum * Math.min(1, 0.25/dist));
+    client_audio.playSound("pew-left", left/sum * Math.min(1, 0.25/dist));
+    client_audio.playSound("pew-right", right/sum * Math.min(1, 0.25/dist));
+  }
+}
+
 function animateFrame(canvas, timestamp) {
   stats.begin();
 
@@ -399,6 +430,24 @@ function animateFrame(canvas, timestamp) {
   canvas.c.stroke();
   canvas.c.restore();
 
+  if (true && game.quadtree) {
+    function drawQuadtree(quadtree) {
+      canvas.c.rect(quadtree.x, quadtree.y, quadtree.width, quadtree.width);
+      _.each(quadtree.subtree, function (subtree) {
+        drawQuadtree(subtree);
+      });
+    }
+    canvas.c.save();
+    viewport.addTransform(canvas);
+    canvas.c.globalAlpha = 0.2;
+    canvas.c.lineWidth = 3;
+    canvas.c.strokeStyle = "#00f";
+    canvas.c.beginPath();
+    drawQuadtree(game.quadtree);
+    canvas.c.stroke();
+    canvas.c.restore();
+  }
+
   _.each(cgame.units, function (cunit) {
     var unit = cunit.unit;
     if (unit.type === null) return;
@@ -409,19 +458,24 @@ function animateFrame(canvas, timestamp) {
     canvas.c.save();
     canvas.c.rotate(cunit.heading);
     if (_.has(sels, cunit.id)) {
+      canvas.c.save();
       canvas.c.beginPath();
+      canvas.c.lineWidth = 1;
       canvas.c.strokeStyle = "#0c0";
+      canvas.c.shadowBlur = 20;
+      canvas.c.shadowColor = "#0c0";
       canvas.c.rect(unit.type.bounds[0].x - 2, unit.type.bounds[0].y - 2,
                     unit.type.bounds[1].x - unit.type.bounds[0].x + 4,
                     unit.type.bounds[1].y - unit.type.bounds[0].y + 4);
       canvas.c.stroke();
+      canvas.c.restore();
     }
     unit.type.draw(unit, canvas, timestamp);
     canvas.c.restore();
 
     canvas.c.transform(1, 0, 0, -1, 0, 0);
     canvas.c.beginPath();
-    if (_.has(sels, cunit.id) && unit.x != null && unit.y != null) {
+    if (false && _.has(sels, cunit.id) && unit.x != null && unit.y != null) {
       canvas.c.fillText(unit.x.toFixed(2) + "," + unit.y.toFixed(2), 10, 15);
     }
     canvas.c.stroke();
@@ -442,6 +496,7 @@ function animateFrame(canvas, timestamp) {
   _.each(cgame.projectiles, function (cproj) {
     var proj = cproj.projectile;
     if (proj.type === null) return;
+    maybePew(proj, viewport);
     canvas.c.save();
     viewport.addTransform(canvas);
     canvas.c.translate(cproj.x, cproj.y);
