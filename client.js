@@ -522,10 +522,10 @@ function animateFrame(canvas, timestamp) {
   });
 
   _.each(cgame.projectiles, function (cproj) {
-    if (!viewport.possiblyViewable(cproj, 50)) return;
     var proj = cproj.projectile;
-    if (proj.type === null) return;
     maybePew(proj, viewport);
+    if (!viewport.possiblyViewable(cproj, 50)) return;
+    if (proj.type === null) return;
     canvas.c.save();
     viewport.addTransform(canvas);
     canvas.c.translate(cproj.x, cproj.y);

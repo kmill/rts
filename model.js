@@ -126,7 +126,7 @@ addUnitDef(new UnitDef({
       }
       canvas.c.beginPath();
       viewport.removeScaling(canvas);
-      canvas.c.arc(0, 0, 2, 0, Math.PI * 2, false);
+      canvas.c.arc(0, 0, 3, 0, Math.PI * 2, false);
       canvas.c.fill();
       canvas.c.stroke();
     } else {
@@ -327,6 +327,7 @@ function Unit(props) {
     type : null,
     player : null,
     health : null,
+    heat : 0,
     x : null,
     y : null,
     heading : null,
@@ -343,6 +344,7 @@ Unit.props = [
   { name : "type", "type" : UnitDefType },
   { name : "player", "type" : types.UInt8 },
   { name : "health", "type" : types.UFixed2(4) },
+  { name : "heat", "type" : types.UInt8 },
   { name : "x", "type" : types.UFixed2(4) },
   { name : "y", "type" : types.UFixed2(4) },
   { name : "heading", "type" : types.Fixed2(10) },
@@ -446,20 +448,27 @@ Unit.prototype.step = function () {
     // TODO deal with map size
     if (this.x >= 4096) { this.x = 4096 - 1/16; }
     if (this.y >= 4096) { this.y = 4096 - 1/16; }
+
+    if (this.heat > 0) {
+      this.heat--;
+    }
   }
   this.normalize();
 };
 
 Unit.prototype.fire = function () {
-  this.game.addProjectile(new Projectile({
-    id : this.game.genId(),
-    type : "energy_ball",
-    owner : this.id,
-    x : this.x,
-    y : this.y,
-    dx : this.dx + 10 * Math.cos(this.heading),
-    dy : this.dy + 10 * Math.sin(this.heading)
-  }));
+  if (this.heat == 0) {
+    this.heat++;
+    this.game.addProjectile(new Projectile({
+      id : this.game.genId(),
+      type : "energy_ball",
+      owner : this.id,
+      x : this.x,
+      y : this.y,
+      dx : this.dx + 10 * Math.cos(this.heading),
+      dy : this.dy + 10 * Math.sin(this.heading)
+    }));
+  }
 };
 
 /***************
