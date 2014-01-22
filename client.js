@@ -170,7 +170,7 @@ inputWatcher.listenMouse(function (input, which, released, path) {
         lengths.push(l);
       }
       vpath.push(vpath[vpath.length - 1]);
-      var delta = pathLength / (ids.length - 1) - ids.length * 0.01;
+      var delta = pathLength / (ids.length - 1) - 0.01 / ids.length;
       var j = 0;
       var alpha = 0;
       function updateToNextPoint() {
@@ -274,71 +274,91 @@ function determine_prelim_selection(/*opt*/bounds) {
 
 function Viewport(canvas) {
   this.canvas = canvas;
-  this.center = { x : 0, y : 0};
-  this.zoom = 0;
-  this.zoomBase = 1.5;
+  this.center = { x : 2048, y : 2048};
+  this.zoomBase = 1.1;
+  this.maxZoom = Math.ceil(10 * Math.log(1.5)/Math.log(this.zoomBase));
+  this.minZoom = Math.floor(-6 * Math.log(1.5)/Math.log(this.zoomBase));
+  this.zoom = this.minZoom;
+  this.recomputeZoomFactor();
 }
+Viewport.prototype.recomputeZoomFactor = function () {
+  this.zoomFactor = Math.pow(this.zoomBase, this.zoom);
+};
 Viewport.prototype.update = function (input) {
-  var zoomFactor = Math.pow(this.zoomBase, this.zoom);
   if (input.buttons[2]) {
-    var dx = (input.x - input.buttons[2].x) / zoomFactor;
-    var dy = (input.buttons[2].y - input.y) / zoomFactor;
+    var dx = (input.x - input.buttons[2].x) / this.zoomFactor;
+    var dy = (input.buttons[2].y - input.y) / this.zoomFactor;
     this.center.x += dx * 0.05;
     this.center.y += dy * 0.05;
   }
   if (input.keys[37]) {
-    this.center.x -= 10/zoomFactor;
+    this.center.x -= 10/this.zoomFactor;
   }
   if (input.keys[38]) {
-    this.center.y += 10/zoomFactor;
+    this.center.y += 10/this.zoomFactor;
   }
   if (input.keys[39]) {
-    this.center.x += 10/zoomFactor;
+    this.center.x += 10/this.zoomFactor;
   }
   if (input.keys[40]) {
-    this.center.y -= 10/zoomFactor;
+    this.center.y -= 10/this.zoomFactor;
   }
 };
 Viewport.prototype.inputListen = function (input) {
   var self = this;
   input.listenMouseWheel(function (input, deltaX, deltaY) {
     var oldmouse = self.fromViewport(input);
-    self.zoom += deltaY - deltaX; // deltaX for shift-scroll
-    if (self.zoom < -6) { self.zoom = -6; }
-    if (self.zoom > 10) { self.zoom = 10; }
+    var dzoom = deltaY - deltaX; // deltaX for shift-scroll
+    self.zoom += dzoom;
+    if (self.zoom < self.minZoom) { self.zoom = self.minZoom; }
+    if (self.zoom > self.maxZoom) { self.zoom = self.maxZoom; }
+    self.recomputeZoomFactor();
     var newmouse = self.fromViewport(input);
     self.center.x += oldmouse.x - newmouse.x;
     self.center.y += oldmouse.y - newmouse.y;
+    if (dzoom < 0) {
+      self.center.x = 2048+vect.clamp(self.center.x-2048,
+                                      -4*self.canvas.width*self.zoomFactor,
+                                      4*self.canvas.width*self.zoomFactor);
+      self.center.y = 2048+vect.clamp(self.center.y-2048,
+                                      -4*self.canvas.width*self.zoomFactor,
+                                      4*self.canvas.width*self.zoomFactor);
+    }
   });
 };
 Viewport.prototype.fromViewport = function (point) {
   var cx = point.x - this.canvas.width/2;
   var cy = this.canvas.height/2 - point.y;
-  var zoomFactor = Math.pow(this.zoomBase, this.zoom);
   return {
-    x : this.center.x + cx/zoomFactor,
-    y : this.center.y + cy/zoomFactor
+    x : this.center.x + cx/this.zoomFactor,
+    y : this.center.y + cy/this.zoomFactor
   };
 };
 Viewport.prototype.toViewport = function (point) {
-  var zoomFactor = Math.pow(this.zoomBase, this.zoom);
   return {
-    x : zoomFactor * (point.x - this.center.x) + this.canvas.width/2,
-    y : zoomFactor * (this.center.y - point.y) + this.canvas.height/2
+    x : this.zoomFactor * (point.x - this.center.x) + this.canvas.width/2,
+    y : this.zoomFactor * (this.center.y - point.y) + this.canvas.height/2
   };
 };
+Viewport.prototype.possiblyViewable = function (point, radius) {
+  var x = this.zoomFactor * (point.x - this.center.x) + this.canvas.width/2;
+  var y = this.zoomFactor * (this.center.y - point.y) + this.canvas.height/2;
+  var r = this.zoomFactor * radius;
+  return (x + r >= 0
+          && x - r <= this.canvas.width
+          && y - r <= this.canvas.height
+          && y + r >= 0);
+};
 Viewport.prototype.addTransform = function (canvas) {
-  var zoomFactor = Math.pow(this.zoomBase, this.zoom);
   canvas.c.transform(
-    zoomFactor, 0,
-    0, -zoomFactor,
-    this.canvas.width/2 - zoomFactor * this.center.x,
-    this.canvas.height/2 + zoomFactor * this.center.y
+    this.zoomFactor, 0,
+    0, -this.zoomFactor,
+    this.canvas.width/2 - this.zoomFactor * this.center.x,
+    this.canvas.height/2 + this.zoomFactor * this.center.y
   );
 };
 Viewport.prototype.removeScaling = function (canvas) {
-  var zoomFactor = Math.pow(this.zoomBase, this.zoom);
-  canvas.c.scale(1/zoomFactor, 1/zoomFactor);
+  canvas.c.scale(1/this.zoomFactor, 1/this.zoomFactor);
 };
 
 var viewport;
@@ -448,7 +468,32 @@ function animateFrame(canvas, timestamp) {
     canvas.c.restore();
   }
 
+  if (viewport.zoomFactor >= 0.5) {
+    _.each(cgame.units, function (cunit) {
+      if (!viewport.possiblyViewable(cunit, 50)) return;
+      if (_.has(sels, cunit.id)) {
+        var unit = cunit.unit;
+        if (unit.type === null) return;
+        canvas.c.save();
+        viewport.addTransform(canvas);
+        canvas.c.translate(cunit.x, cunit.y);
+        canvas.c.rotate(cunit.heading);
+        canvas.c.beginPath();
+        canvas.c.lineWidth = 1;
+        canvas.c.strokeStyle = "#0c0";
+        canvas.c.shadowBlur = 20;
+        canvas.c.shadowColor = "#0c0";
+        canvas.c.rect(unit.type.bounds[0].x - 2, unit.type.bounds[0].y - 2,
+                      unit.type.bounds[1].x - unit.type.bounds[0].x + 4,
+                      unit.type.bounds[1].y - unit.type.bounds[0].y + 4);
+        canvas.c.stroke();
+        canvas.c.restore();
+      }
+    });
+  }
+
   _.each(cgame.units, function (cunit) {
+    if (!viewport.possiblyViewable(cunit, 50)) return;
     var unit = cunit.unit;
     if (unit.type === null) return;
     canvas.c.save();
@@ -457,43 +502,27 @@ function animateFrame(canvas, timestamp) {
 
     canvas.c.save();
     canvas.c.rotate(cunit.heading);
-    if (_.has(sels, cunit.id)) {
-      canvas.c.save();
-      canvas.c.beginPath();
-      canvas.c.lineWidth = 1;
-      canvas.c.strokeStyle = "#0c0";
-      canvas.c.shadowBlur = 20;
-      canvas.c.shadowColor = "#0c0";
-      canvas.c.rect(unit.type.bounds[0].x - 2, unit.type.bounds[0].y - 2,
-                    unit.type.bounds[1].x - unit.type.bounds[0].x + 4,
-                    unit.type.bounds[1].y - unit.type.bounds[0].y + 4);
-      canvas.c.stroke();
-      canvas.c.restore();
-    }
-    unit.type.draw(unit, canvas, timestamp);
+    unit.type.draw(unit, canvas, timestamp, viewport, _.has(sels, cunit.id));
     canvas.c.restore();
 
-    canvas.c.transform(1, 0, 0, -1, 0, 0);
-    canvas.c.beginPath();
-    if (false && _.has(sels, cunit.id) && unit.x != null && unit.y != null) {
-      canvas.c.fillText(unit.x.toFixed(2) + "," + unit.y.toFixed(2), 10, 15);
+    if (viewport.zoomFactor >= 0.5) {
+      canvas.c.transform(1, 0, 0, -1, 0, 0);
+      var healthWidth = 14*unit.health/unit.type.hp;
+      canvas.c.beginPath();
+      canvas.c.fillStyle = "#f00";
+      canvas.c.fillRect(-7+healthWidth, 10, 14-healthWidth, 3);
+      canvas.c.stroke();
+      canvas.c.beginPath();
+      canvas.c.fillStyle = "#0f0";
+      canvas.c.fillRect(-7, 10, healthWidth, 3);
+      canvas.c.stroke();
     }
-    canvas.c.stroke();
-
-    var healthWidth = 14*unit.health/unit.type.hp;
-    canvas.c.beginPath();
-    canvas.c.fillStyle = "#f00";
-    canvas.c.fillRect(-7+healthWidth, 10, 14-healthWidth, 3);
-    canvas.c.stroke();
-    canvas.c.beginPath();
-    canvas.c.fillStyle = "#0f0";
-    canvas.c.fillRect(-7, 10, healthWidth, 3);
-    canvas.c.stroke();
 
     canvas.c.restore();
   });
 
   _.each(cgame.projectiles, function (cproj) {
+    if (!viewport.possiblyViewable(cproj, 50)) return;
     var proj = cproj.projectile;
     if (proj.type === null) return;
     maybePew(proj, viewport);
@@ -549,8 +578,11 @@ function animateFrame(canvas, timestamp) {
             }
             var thisi = Math.max(0, i-displace);
             if (nexti <= 0 || thisi > length/20) continue;
-            canvas.c.moveTo(pta.x + dx*thisi, pta.y + dy*thisi);
-            canvas.c.lineTo(pta.x + dx*nexti, pta.y + dy*nexti);
+            if (vect.between(pta.x + dx*thisi, -10, canvas.width+10)
+               && vect.between(pta.y + dy*thisi, -10, canvas.height+10)) {
+              canvas.c.moveTo(pta.x + dx*thisi, pta.y + dy*thisi);
+              canvas.c.lineTo(pta.x + dx*nexti, pta.y + dy*nexti);
+            }
           }
         }
         displace = (displace + length/20 - (~~(length/20))) % 1;

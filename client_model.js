@@ -41,7 +41,7 @@ CUnit.prototype.updatePosHistory = function () {
 CUnit.prototype.update = function (timestamp) {
   this.updatePosHistory();
   var dt = (timestamp - this.cgame.tickTimestamp) / constants.TICK_INTERVAL;
-  if (true && this.posHistory.length == 3) {
+  if (false && this.posHistory.length == 3) {
     var p = this.posHistory;
     this.x = quadratic(timestamp,
                    p[0].timestamp, p[0].x,

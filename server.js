@@ -27,7 +27,7 @@ for (var i = 1; i <= 200; i++) {
     type : "basic_mobile",
     health : 20,
     x : Math.random() * 4096,
-    y : Math.random() * 4096,
+    y : (Math.random()/2 + (i%2)/2) * 4096,
     heading : Math.random() * 2 * Math.PI
   });
   game.addUnit(u);

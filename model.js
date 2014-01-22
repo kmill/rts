@@ -110,6 +110,84 @@ addUnitDef(new UnitDef({
   bounds : [{x : -5, y : -5},
             {x : 10, y : 5}],
   minThrust : 0,
+  draw : function (unit, canvas, timestamp, viewport, selected) {
+    canvas.c.save();
+    canvas.c.fillStyle = "#ccc";
+    if (unit.player == 1) {
+      canvas.c.fillStyle = "#33f";
+    } else if (unit.player == 2) {
+      canvas.c.fillStyle = "#f33";
+    }
+    canvas.c.strokeStyle = "#000";
+    canvas.c.lineWidth = 1;
+    if (viewport.zoomFactor < 0.5) {
+      if (selected) {
+        canvas.c.fillStyle = "#fff";
+      }
+      canvas.c.beginPath();
+      viewport.removeScaling(canvas);
+      canvas.c.arc(0, 0, 2, 0, Math.PI * 2, false);
+      canvas.c.fill();
+      canvas.c.stroke();
+    } else {
+      canvas.c.beginPath();
+      canvas.c.moveTo(10, 0);
+      canvas.c.lineTo(-5, -5);
+      canvas.c.lineTo(-5, 5);
+      canvas.c.lineTo(10, 0);
+      canvas.c.fill();
+      canvas.c.stroke();
+      if (unit.thrust > 0) {
+        canvas.c.strokeStyle = "#ff0";
+        canvas.c.beginPath();
+        canvas.c.moveTo(-6, -3);
+        canvas.c.lineTo(-6 - unit.thrust*1.8, 0);
+        canvas.c.lineTo(-6, 3);
+        canvas.c.stroke();
+        canvas.c.strokeStyle = "#f00";
+        canvas.c.beginPath();
+        canvas.c.moveTo(-6, -3);
+        canvas.c.lineTo(-6 - unit.thrust*0.8, 0);
+        canvas.c.lineTo(-6, 3);
+        canvas.c.stroke();
+      }
+      if (unit.rotationSpeed > 0) {
+        canvas.c.strokeStyle = "#ff0";
+        canvas.c.beginPath();
+        canvas.c.moveTo(6, -2.5);
+        canvas.c.lineTo(7, -2 - unit.rotationSpeed*8);
+        canvas.c.lineTo(8, -2);
+        canvas.c.stroke();
+        canvas.c.strokeStyle = "#f00";
+        canvas.c.beginPath();
+        canvas.c.moveTo(7, -2);
+        canvas.c.lineTo(7, -2 - unit.rotationSpeed*4);
+        canvas.c.stroke();
+      }
+      if (unit.rotationSpeed < 0) {
+        canvas.c.strokeStyle = "#ff0";
+        canvas.c.beginPath();
+        canvas.c.moveTo(6, 2.5);
+        canvas.c.lineTo(7, 2 - unit.rotationSpeed*8);
+        canvas.c.lineTo(8, 2);
+        canvas.c.stroke();
+        canvas.c.strokeStyle = "#f00";
+        canvas.c.beginPath();
+        canvas.c.moveTo(7, 2);
+        canvas.c.lineTo(7, 2 - unit.rotationSpeed*4);
+        canvas.c.stroke();
+      }
+    }
+    canvas.c.restore();
+  }
+}));
+
+addUnitDef(new UnitDef({
+  name : "basic_mobile2",
+  hp : 20,
+  bounds : [{x : -5, y : -5},
+            {x : 5, y : 5}],
+  minThrust : 0,
   draw : function (unit, canvas, timestamp) {
     canvas.c.save();
     canvas.c.fillStyle = "#ccc";
@@ -170,6 +248,7 @@ addUnitDef(new UnitDef({
     canvas.c.restore();
   }
 }));
+
 
 var UnitDefType = {
   length : 2,
@@ -356,12 +435,17 @@ Unit.prototype.step = function () {
     var collisions = this.game.quadtree.lookup(this, 10);
     _.each(collisions, function (cunit) {
     var dist = vect.dist(this, cunit);
-      if (cunit !== this && dist < 10) {
+      if (cunit !== this && dist < 15) {
         var dv = vect.unit(this, cunit);
         this.dx = this.dx/2 - dv.x / dist * 10;
         this.dy = this.dy/2 - dv.y / dist * 10;
       }
     }, this);
+    if (this.x < 0) { this.x = 0; }
+    if (this.y < 0) { this.y = 0; }
+    // TODO deal with map size
+    if (this.x >= 4096) { this.x = 4096 - 1/16; }
+    if (this.y >= 4096) { this.y = 4096 - 1/16; }
   }
   this.normalize();
 };
@@ -502,6 +586,15 @@ Projectile.prototype.step = function () {
       delete this.game.projectiles[this.id];
     }
 
+    var doDelete = false;
+    if (this.x < 0) { doDelete = true; }
+    if (this.y < 0) { doDelete = true; }
+    // TODO deal with map size
+    if (this.x >= 4096) { doDelete = true; }
+    if (this.y >= 4096) { doDelete = true; }
+    if (doDelete) {
+      delete this.game.projectiles[this.id];
+    }
   }
   this.normalize();
 };
@@ -856,6 +949,10 @@ ClientModel.prototype.predictGame = function () {
   unackTicks.sort(function (a, b) { return a - b; });
   var steps = 0;
   _.each(unackTicks, function (tick) {
+    if (steps >= 10) {
+      // just give up :-(
+      return;
+    }
     _.each(self.unacknowledgedActions[tick], function (action) {
       action.perform(g);
     });
